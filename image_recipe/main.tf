@@ -11,9 +11,13 @@ resource "aws_imagebuilder_image_recipe" "this" {
     }
   }
 
-  systems_manager_agent {
-    uninstall_after_build = var.system_manager_agent_uninstall
+  dynamic "systems_manager_agent" {
+    for_each = var.plaform == "Linux" ? [1] : []
+    systems_manager_agent {
+      uninstall_after_build = var.system_manager_agent_uninstall
+    }
   }
+
   dynamic "component" {
     for_each = var.component_arns
     content {
