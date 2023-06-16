@@ -1,0 +1,200 @@
+name: MIT-Windows-OS-Hardenings
+description: OS Hardenings for Windows 2016 and above.
+schemaVersion: 1.0
+
+phases:
+  - name: build
+    steps:
+      - name: MIT-Windows-OS-Hardenings
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Executing MIT-Windows-OS-Hardenings ..."
+              $s3Bucket = "aws-mit-windowsami-packagestore"
+              $s3Key = "Windows2019_Hardenings"
+              $DestinationPath = "C:\MITSetup"
+              Add-Type -assembly "system.io.compression.filesystem"
+              $location="$DestinationPath\$s3Key"
+              copy-s3object -BucketName $s3Bucket -Key $s3Key.zip -LocalFile "$DestinationPath\$s3Key.zip" -Force
+              if (!$Error) {
+                    Write-Output "Success: Copy Windows 2019 Hardening Files."
+              } else {
+                    Write-Output "Failure: Copy Windows 2019 Hardening Files."
+              }
+              $Error.Clear()
+              $BackUpPath="$DestinationPath\$s3Key.zip"
+              $Destination="$DestinationPath"
+              [io.compression.zipfile]::ExtractToDirectory($BackUpPath, $Destination)
+              Start-Sleep -Seconds 10
+              Write-Output "Configuring Security Settings..."
+              ## Function to test registry value
+              function Test-RegistryValue {
+                param (
+                    [parameter(Mandatory=$true)]
+                    [ValidateNotNullOrEmpty()]$Path,
+                    [parameter(Mandatory=$true)]
+                    [ValidateNotNullOrEmpty()]$Value
+                )
+                try {
+                    Get-ItemProperty -Path $Path | Select-Object -ExpandProperty $Value -ErrorAction Stop | Out-Null
+                    return $true
+                }
+                catch {
+                    return $false
+                }
+              }
+              ## VULNERABILITY
+              Write-Output "... Remediating Identified Vulnerabilities"
+              # Configuring Additional LSA Protection #Audit
+              New-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\" -Name "LSASS.exe" -Force | Out-Null
+              New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\LSASS.exe" -Name 'AuditLevel' -PropertyType DWORD -Value "8" | Out-Null
+              #Set additional protection
+              if(!(Test-Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa)) {
+                New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\" -Name "Lsa"
+              }
+              New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\" -Name "RunAsPPL" -PropertyType DWORD -Value "1" | Out-Null
+              #TLS 1.0, 1.1, 1.2
+              Write-Output "... Remediating TLS"
+              # Ciphers
+              $InsecureCiphers = @(
+                'DES 56/56',
+                'NULL',
+                'RC2 128/128',
+                'RC2 40/128',
+                'RC2 56/128',
+                'RC4 40/128',
+                'RC4 56/128',
+                'RC4 64/128',
+                'RC4 128/128',
+                'Triple DES 168'
+              )
+              foreach ($InsecureCipher in $InsecureCiphers) {
+                $Key = (Get-Item HKLM:\).OpenSubKey('SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers', $true).CreateSubKey($InsecureCipher)
+                $Key.SetValue('Enabled', 0, 'DWORD')
+                $Key.close()
+                Write-Output "$($InsecureCipher) has been disabled."
+              }
+              $SecureCiphers = @('AES 128/128', 'AES 256/256')
+              foreach ($SecureCipher in $SecureCiphers) {
+                $Key = (Get-Item HKLM:\).OpenSubKey('SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers', $true).CreateSubKey($SecureCipher)
+                New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$SecureCipher\" -Name "Enabled" -Value "0xffffffff" -PropertyType "DWORD" -Force | Out-Null
+                $Key.close()
+                Write-Output "$($SecureCipher) has been enabled."
+              }
+              
+              #Enable TLS 1.2 strong cryptogrphy on .NET 3.x (and earlier) and set .NET default to system settings
+              $NetRegistryPath = "HKLM:\SOFTWARE\Microsoft\.NETFramework\v2.0.50727"
+              New-ItemProperty -Path $NetRegistryPath -Name "SchUseStrongCrypto\" -Value "1" -PropertyType DWORD -Force | Out-Null
+              New-ItemProperty -Path $NetRegistryPath -Name "SystemDefaultTlsVersions" -Value "1" -PropertyType DWORD -Force | Out-Null
+              $NetRegistryPath = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\.NETFramework\v2.0.50727"
+              New-ItemProperty -Path $NetRegistryPath -Name "SchUseStrongCrypto" -Value "1" -PropertyType DWORD -Force | Out-Null
+              New-ItemProperty -Path $NetRegistryPath -Name "SystemDefaultTlsVersions" -Value "1" -PropertyType DWORD -Force | Out-Null
+              
+              #Enable TLS 1.2 strong cryptogrphy on .NET 4.x (and later) and set .NET default to system settings
+              $NetRegistryPath = "HKLM:\SOFTWARE\Microsoft\.NETFramework\v4.0.30319"
+              New-ItemProperty -Path $NetRegistryPath -Name "SchUseStrongCrypto" -Value "1" -PropertyType DWORD -Force | Out-Null
+              New-ItemProperty -Path $NetRegistryPath -Name "SystemDefaultTlsVersions" -Value "1" -PropertyType DWORD -Force | Out-Null
+              $NetRegistryPath = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\.NETFramework\v4.0.30319"
+              New-ItemProperty -Path $NetRegistryPath -Name "SchUseStrongCrypto" -Value "1" -PropertyType DWORD -Force | Out-Null
+              New-ItemProperty -Path $NetRegistryPath -Name "SystemDefaultTlsVersions" -Value "1" -PropertyType DWORD -Force | Out-Null
+
+              #Check for and set WinHTTP defaults to TLS 1.2 / Configure WINHTTP security settings
+              $NetRegistryPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp"
+              New-ItemProperty -Path $NetRegistryPath -Name "DefaultSecureProtocols" -Value "2048" -PropertyType DWORD -Force | Out-Null
+              New-ItemProperty -Path $NetRegistryPath -Name "WINHTTP_OPTION_SECURE_PROTOCOLS" -Value "2048" -PropertyType DWORD -Force | Out-Null
+              $NetRegistryPath = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp\"
+              New-Item -Path "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp\" -Name WinHttp -Force
+              New-ItemProperty -Path $NetRegistryPath -Name "DefaultSecureProtocols" -Value "2048" -PropertyType DWORD -Force | Out-Null
+              New-ItemProperty -Path $NetRegistryPath -Name "WINHTTP_OPTION_SECURE_PROTOCOLS" -Value "2048" -PropertyType DWORD -Force | Out-Null
+              $NetRegistryPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\"
+              New-ItemProperty -Path $NetRegistryPath -Name "SecureProtocols" -Value "2048" -PropertyType DWORD -Force | Out-Null
+              
+              #Disable all protocols except TLS 1.2 in SCHANNEL communication
+              $ProtocolList = @("Multi-Protocol Unified Hello", "PCT 1.0", "SSL 2.0", "SSL 3.0", "TLS 1.0", "TLS 1.1", "TLS 1.2", "TLS 1.3")
+              $ProtocolSubKeyList = @("Client", "Server")
+              $RegistryPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\"
+
+              foreach ($Protocol in $ProtocolList) {
+                foreach ($Key in $ProtocolSubKeyList) {
+                    $CurrentRegPath = $RegistryPath + $Protocol + "\" + $Key
+                    New-Item -Path $CurrentRegPath -Force | Out-Null
+                    if (((Get-CimInstance -ClassName Win32_OperatingSystem).Version) -eq "10.0.20348" -and $Protocol -eq "TLS 1.3") {
+                        Write-Output "Windows Server 2022 found. Setting $($Key) - $($Protocol)"
+                        New-ItemProperty -Path $CurrentRegPath -Name "DisabledByDefault" -Value "0" -PropertyType DWORD -Force | Out-Null
+                        New-ItemProperty -Path $CurrentRegPath -Name "Enabled" -Value "1" -PropertyType DWORD -Force | Out-Null
+                        Enable-TlsCipherSuite -Name TLS_CHACHA20_POLY1305_SHA256 -Position 0
+                    }
+                    elseif ($Protocol -eq "TLS 1.3") {
+                        Write-Output "Server is not Windows Server 2022. $($Protocol) not supported."
+                    }
+                    elseif ($Protocol -eq "TLS 1.2") {
+                        Write-Output "Setting $($Key) - $($Protocol)."
+                        New-ItemProperty -Path $CurrentRegPath -Name "DisabledByDefault" -Value "0" -PropertyType DWORD -Force | Out-Null
+                        New-ItemProperty -Path $CurrentRegPath -Name "Enabled" -Value "1" -PropertyType DWORD -Force | Out-Null
+                    }
+                    else {
+                        Write-Output "Disabling $($Key) - $($Protocol)."
+                        New-ItemProperty -Path $CurrentRegPath -Name "DisabledByDefault" -Value "1" -PropertyType DWORD -Force | Out-Null
+                        New-ItemProperty -Path $CurrentRegPath -Name "Enabled" -Value "0" -PropertyType DWORD -Force | Out-Null
+                    }
+                }
+              }
+
+              #KeyExchange Settings
+              $KeyExchangeAlgorithms = @('Diffie-Hellman', 'PKCS')
+              foreach ($KeyExchange in $KeyExchangeAlgorithms) {
+                $Key = (Get-Item HKLM:\).OpenSubKey('SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\KeyExchangeAlgorithms', $true).CreateSubKey($KeyExchange)
+                New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\KeyExchangeAlgorithms\$KeyExchange" -Name 'Enabled' -Value '0xffffffff' -PropertyType 'DWORD' -Force | Out-Null
+                $Key.close()
+                Write-Output "KeyExchangeAlgorithm $($KeyExchange) has been enabled."
+              }
+              New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\KeyExchangeAlgorithms\Diffie-Hellman\" -Name 'ServerMinKeyBitLength' -Value '2048' -PropertyType 'DWORD' -Force | Out-Null
+              New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\KeyExchangeAlgorithms\Diffie-Hellman\" -Name 'ClientMinKeyBitLength' -Value '2048' -PropertyType 'DWORD' -Force | Out-Null
+              New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\KeyExchangeAlgorithms\PKCS\" -Name 'ClientMinKeyBitLength' -Value '2048' -PropertyType 'DWORD' -Force | Out-Null
+              #Fix TLS in IE
+              REG LOAD "hku\Default" "C:\Users\Default\NTUSER.DAT"
+              REG ADD "HKEY_CURRENT_USER:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\" /v SecureProtocols /t REG_DWORD /d 2048 /f
+              REG UNLOAD "hku\Default"
+              <#*****************************************************************************************
+              Purpose: Windows NT may use a cache to store the last interactive logon (i.e. console logon), to provide a safe logon for the host in the event that the Domain Controller goes down. This feature is currently activated on this host.
+              QID:90007 - Enabled Cached Logon Credential
+              *****************************************************************************************#>
+              $registrypath = "HKLM:\Software\Microsoft\Windows Nt\CurrentVersion\Winlogon\"
+              $name = "CachedLogonsCount"
+              $value = "0"
+              New-ItemProperty -Path $registrypath -Name $name -Value $value -PropertyType string -Force | Out-Null
+              <#*****************************************************************************************
+              Purpose: Microsoft Windows Print Spooler Remote Code Execution Vulnerability (PrintNightmare) (Zero Day)
+              QID:91785 - Microsoft Windows Print Spooler Remote Code Execution Vulnerability (PrintNightmare) (Zero Day)
+              *****************************************************************************************#>
+
+              Stop-Service -Name Spooler -Force
+              Set-Service -Name Spooler -StartupType Disabled
+              
+              # Disabling System Remote Assistance
+              try {
+                Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" -Name "fAllowToGetHelp" -Value 0
+                Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" -Name "fAllowUnsolicited" -Value 0
+              }
+
+              catch {
+                New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" -PropertyType DWORD -Name "fAllowToGetHelp" -Value 0
+                New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" -PropertyType DWORD -Name "fAllowUnsolicited" -Value 0
+              }
+
+              # Disabling UAC for vRA, UAC will be enabled back on the intiialize.ps1 script
+              Set-Itemproperty -path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\system' -Name 'EnableLUA' -value 0
+
+              <#*****************************************************************************************
+              Purpose: Enable Certificate Padding Verification Check
+              QID:378332 - WinVerify Trust Signature Validation Vulnerability
+              *****************************************************************************************#>
+              New-Item -Path "HKLM:\SOFTWARE\Microsoft\Cryptography\Wintrust\" -Name "Config" -Force
+              New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Cryptography\Wintrust\Config" -Name EnableCertPaddingCheck -PropertyType DWORD -Value 1 -Force
+              New-Item -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Cryptography\Wintrust\" -Name "Config" -Force
+              New-ItemProperty -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Name EnableCertPaddingCheck -PropertyType DWORD -Value 1 -Force

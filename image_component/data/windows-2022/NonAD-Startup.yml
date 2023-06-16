@@ -1,0 +1,40 @@
+name: NonAD-Startup
+description: Download & configure NonAD startup script
+schemaVersion: 1.0
+
+phases:
+  - name: build
+    steps:
+      - name: Download-Startup-script
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Downloading NonAD Startup script..."
+              $s3Bucket = "aws-mit-windowsami-packagestore"
+              $s3Key = "nonad-windows/nonad-startup.ps1"
+              $localPath = "C:\MITSetup\nonad-runonce.ps1"
+              copy-s3object -BucketName $s3Bucket -Key $s3Key -LocalFile "$localPath" -Force
+              If (!$Error) {
+                Write-Output "Success: Copied s3 file s3://$s3Bucket/$s3Key to $localPath."
+              } Else {
+                Write-Output "Failure: Copying s3 file s3://$s3Bucket/$s3Key to $localPath."
+              }
+              Start-Sleep -Seconds 5
+      - name: Configure-RunOnce
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Configuring RunOnce..."
+              $scriptPath = "C:\MITSetup\nonad-runonce.ps1"
+              $registryPath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
+              Set-ItemProperty -Path $registryPath -Name "CustomService" -Value "PowerShell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File $scriptPath"

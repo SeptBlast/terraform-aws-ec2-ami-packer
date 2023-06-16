@@ -1,0 +1,128 @@
+name: MIT-Windows-InitialSetup-BasicHardening
+description: MIT Windows Component for Initial Setup and Basic Hardening using EC2 ImageBuilder.
+schemaVersion: 1.0
+#Author : Hanumantha Rao MLV
+
+phases:
+  - name: build
+    steps:
+      - name: MIT-Windows-Create-Directory
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Executing MIT-Windows-Create-Directory ..."
+              New-Item -Path 'C:\MITSetup' -ItemType directory
+              If (!$Error) {
+                  Write-Output "Success: Created MITSetup Directory."
+              } Else {
+                  Write-Output "Failure: Created MITSetup Directory"
+              }          
+
+      - name: MIT-Windows-Disable-IE-ESC
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Executing MIT-Windows-Disable-IE-ESC ..."
+              $AdminKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
+              $UserKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}"
+              Set-ItemProperty -Path $AdminKey -Name "IsInstalled" -Value 0 -Force
+              Set-ItemProperty -Path $UserKey -Name "IsInstalled" -Value 0 -Force
+              If (!$Error) {
+                Write-Output "Success: IE Enhanced Security Configuration (ESC) has been disabled."
+              } Else {
+                Write-Output "Failure: Disabling IE Enhanced Security Configuration (ESC)."
+              }
+              Start-Sleep -Seconds 5
+    
+      - name: MIT-Windows-Turn-Off-Firewall
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Executing MIT-Windows-Turn-Off-Firewall ..."              
+              Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+              If (!$Error) {
+                Write-Output "Success: Turned off Windows Firewall."
+              } Else {
+                Write-Output "Failure: Turning off Windows Firewall."
+              }
+              Start-Sleep -Seconds 5
+
+      - name: MIT-Windows-Enable-RDP
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Executing MIT-Windows-Enable-RDP ..."
+              (Get-WmiObject -class "Win32_TSGeneralSetting" -Namespace root\cimv2\terminalservices -Filter "TerminalName='RDP-tcp'").SetUserAuthenticationRequired(1)
+              If (!$Error) {
+                Write-Output "Success: Enabled RDP."
+              } Else {
+                Write-Output "Failure: Enabling RDP."
+              }
+              Start-Sleep -Seconds 5
+
+      - name: MIT-Windows-Restrict-Anonymous
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              $anonymousValue = "2"
+              Write-Output "Executing MIT-Windows-Restrict-Anonymous ..."
+              Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "restrictanonymous" -Value $anonymousValue
+              If (!$Error) {
+                Write-Output "Restricted Anonymous to $anonymousValue"
+              } Else {
+                Write-Output "Failure: Restricting Anonymous to $anonymousValue."
+              }
+              Start-Sleep -Seconds 10
+
+      - name: MIT-Windows-Configure-Network-Settings
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Executing MIT-Windows-Configure-Network-Settings ..."
+              $regKey1="HKLM:\Software\Microsoft\Windows NT\CurrentVersion\winlogon"
+              Set-ItemProperty -Path $regKey1 -Name "CachedLogonsCount" -Value 0 -Force
+              New-ItemProperty -Path HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters -Name SMB1 -PropertyType Dword
+              $regKey2="HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters"
+              Set-ItemProperty -Path $regKey2 requiresecuritysignature -Value '1'
+              $regKey3="HKLM:\System\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy"
+              Set-ItemProperty -Path $regKey3 Enabled -Value '1'
+              $regKey4="HKLM:\System\CurrentControlSet\Control\Session Manager\Memory Management"
+              Set-ItemProperty -Path $regKey4 FeatureSettingsOverride -Value 72
+              Set-ItemProperty -Path $regKey4 FeatureSettingsOverrideMask -Value 3
+              If (!$Error) {
+                Write-Output "Success: Configured network settings."
+              } Else {
+                Write-Output "Failure: Configuring network settings."
+              }
+              Start-Sleep -Seconds 10
+

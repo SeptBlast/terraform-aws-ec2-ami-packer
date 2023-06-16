@@ -1,0 +1,20 @@
+name: C7n-OrgTestDocument
+description: Ensures c7n-org is running as expected
+schemaVersion: 1.0
+
+phases:
+  - name: test
+    steps:
+      - name: ToolConfigAndVersionConfirmation
+        action: ExecuteBash
+        inputs:
+          commands:
+            - cd /home/custodian
+            - echo "check aws version"
+            - aws --version
+            - echo "check git version"
+            - git --version
+            - echo "check custodian version"
+            - custodian version
+            - echo "run c7n-org help to confirm functionality"
+            - c7n-org --help

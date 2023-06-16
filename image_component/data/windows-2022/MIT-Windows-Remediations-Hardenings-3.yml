@@ -1,0 +1,151 @@
+name: MIT-Windows-Remediations-Hardenings-3
+description: Hardenings & Remediations for 2019 and above OS types.
+schemaVersion: 1.0
+
+phases:
+    - name: build
+      steps:
+          - name: MIT-Windows-OS-Customization
+            action: ExecutePowerShell
+            timeoutSeconds: 300
+            onFailure: Abort
+            maxAttempts: 1
+            inputs:
+                commands:
+                    - |
+                        $Error.Clear()
+                        Write-Output "Executing MIT-Windows-OS-Customization ..."
+                        Write-Output "Processing Operating System Customization ..."
+                        Write-Output "... Configuring OS settings"
+
+
+                        #TEMPLATE REGISTRY KEY
+                        If(!(Test-Path HKLM:\SOFTWARE\SeptBlast)) {
+                            New-Item -Path "HKLM:\SOFTWARE" -Name "SeptBlast"
+                            New-ItemProperty -Path "HKLM:\SOFTWARE\SeptBlast" -Name "TemplateInitialVersion" -PropertyType STRING -Value "W2K19STDDE_202107_1.0"
+                        }
+
+                        # Increasing Size of Event Log File
+                        Limit-EventLog -LogName System -MaximumSize 3000MB
+                        Limit-EventLog -LogName Security -MaximumSize 300MB
+                        Limit-EventLog -LogName Application -MaximumSize 300MB
+
+                        # Adding Keyboard Language
+                        Write-Output "...... Adding Keyboard Languages"
+                        $LanguageList = Get-WinUserLanguageList
+                        $LanguageList.Add("fr-fr")
+                        Set-WinUserLanguageList $LanguageList -Force
+                        #New-Item -Path \"HKCU:\Software\Microsoft\CTF\" -Name \"LangBar\" -Force
+                        #New-ItemProperty -Path \"HKCU:\Software\Microsoft\CTF\LangBar\" -Name 'ShowStatus' -PropertyType DWORD -Value \"4\" | Out-Null
+
+                        # Setting Power Plan to Performance
+                        Write-Output "...... Setting Power Plan to High Performance"
+                        c:\Windows\SYSTEM32\powercfg.exe -duplicatescheme 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+                        c:\Windows\SYSTEM32\powercfg.exe -SETACTIVE 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+                        # load",
+                        REG LOAD "hku\Default" "C:\Users\Default\NTUSER.DAT"
+                        # Adjusting Explorer Visual Effect
+                        Write-Output "...... Adjusting Visual Effect to Best Performance"
+                        If(!(Test-Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects)) {
+                            New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer" -Name "VisualEffects"
+                        }
+
+                        $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects'
+                        try {
+                            $s = (Get-ItemProperty -ErrorAction stop -Name visualfxsetting -Path $path).visualfxsetting
+                            if ($s -ne 2) {
+                                Set-ItemProperty -Path $path -Name 'VisualFXSetting' -Value 2 | Out-Null
+                            }
+                        }
+
+                        catch {
+                            New-ItemProperty -Path $path -Name 'VisualFXSetting' -Value 2 -PropertyType 'DWORD' | Out-Null
+                        }
+
+                        # Configuring File Explorer settings
+                        Write-Output "...... Configuring File Explorer settings"
+                        If(!(Test-Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced)) {
+                            New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\" -Name "Advanced"
+                        }
+
+                        $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+                        Set-ItemProperty -Path $key -Name Hidden -Value 1 | Out-Null
+                        Set-ItemProperty -Path $key -Name HideFileExt -Value 0 | Out-Null
+                        Set-ItemProperty -Path $key -Name ShowSuperHidden -Value 0 | Out-Null
+
+                        If(!(Test-Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer)) {
+                            New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\" -Name "Policies"
+                            New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\" -Name "Explorer"
+                        }
+                        $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer'
+                        New-ItemProperty -Path $key -Name HideSCAVolume -PropertyType DWORD -Value 1
+                        New-ItemProperty -Path $key -Name ForceRunOnStartMenu -PropertyType DWORD -Value 1
+                        If(!(Test-Path HKCU:\Software\Policies\Microsoft\Windows\Explorer)) {
+                            New-Item -Path "HKCU:\Software\Policies\Microsoft\Windows\" -Name "Explorer"
+                        }
+                        $key = 'HKCU:\Software\Policies\Microsoft\Windows\Explorer'
+                        New-ItemProperty -Path $key -Name PowerButtonAction -PropertyType DWORD -Value 1 -ErrorAction SilentlyContinue
+
+                        # Changing Desktop Backgound",
+                        Write-Output "...... Setting Moody's Desktop Background"
+                        Function Set-WallPaper($Value) {
+                            Set-ItemProperty -path 'HKCU:\Control Panel\Desktop\' -name wallpaper -value $value
+                            rundll32.exe user32.dll, UpdatePerUserSystemParameters 1, True
+                        }
+
+                        Set-WallPaper -value "C:\Windows\Web\Wallpaper\MCO_BLACK.JPG"
+                        REG UNLOAD "hku\Default"
+
+                        Write-Output "... Adjusting Network Settings"
+                        # Disabling WINS/NetBios
+                        Write-Output "...... Disabling WINS"
+                        $adapters=(gwmi win32_networkadapterconfiguration )
+                        Foreach ($adapter in $adapters){
+                            Write-Output $adapter
+                            $adapter.settcpipnetbios(2)
+                            $adapter.WINSEnableLMHostsLookup -eq $False
+                        }
+
+                        Write-Output "... Reconfiguring Windows Features"
+
+                        # Adding Windows components:
+
+                        Write-Output "...... Installing Telnet Client"
+                        Install-WindowsFeature Telnet-Client
+
+                        Write-Output "...... Removing Windows Media Player"
+                        Disable-WindowsOptionalFeature -Online -FeatureName "WindowsMediaPlayer" -NoRestart
+                        Write-Output "...... Removing Windows Defender Components"
+                        Remove-WindowsFeature "Windows-Defender"
+
+          - name: Reboot-System
+            action: Reboot
+            onFailure: Abort
+            maxAttempts: 2
+            inputs:
+                delaySeconds: 60
+
+          - name: MIT-Windows-KBRemediation
+            action: ExecutePowerShell
+            timeoutSeconds: 300
+            onFailure: Abort
+            maxAttempts: 1
+            inputs:
+                commands:
+                    - |
+                        $Error.Clear()
+                        Write-Output "Executing MIT-Windows-KBRemediation ..."
+                        $s3Bucket = "aws-mit-windowsami-packagestore"
+                        $s3Key = "KB-Remediations"
+                        $DestinationPath = "C:\MITSetup"
+                        Add-Type -assembly "system.io.compression.filesystem"
+                        copy-s3object -BucketName $s3Bucket -Key "$s3Key.zip" -LocalFile "$DestinationPath\$s3Key.zip" -Force
+                        $BackUpPath="$DestinationPath\$s3Key.zip"
+                        $destination="$DestinationPath"
+                        [io.compression.zipfile]::ExtractToDirectory($BackUpPath, $destination)
+                        Start-Process -filepath 'wusa.exe'-ArgumentList "$DestinationPath\$s3Key.msu /quiet /norestart" -Wait
+                        If (!$Error) {
+                          Write-Output "Success: KBRemediation  Installation."
+                        } Else {
+                          Write-Output "Failure: KBRemediation  Installation."
+                        }

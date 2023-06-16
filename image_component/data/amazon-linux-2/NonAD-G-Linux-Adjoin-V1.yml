@@ -1,0 +1,33 @@
+# Created by HanumanthaRao MVL - Nov 2022.
+name: MIT-G-Linux-NPRD-Adjoin-V1
+description: Component for downloading Adjoin script - Graviton.
+schemaVersion: 1.0
+constants:
+  - BASEDIR:
+      type: string
+      value: /root
+  - DOWNLOADSVR:
+      type: string
+      value: 10.32.5.93
+  - ADJOINSCRIPT:
+      type: string
+      value: adjoin-nprd-sssd.sh
+  - DESTADJOINSCRIPT:
+      type: string
+      value: adjoin-nprd.sh
+      
+phases:
+  - name: build
+    steps:
+      - name: Downloadadjoin
+        action: ExecuteBash
+        inputs:
+          commands:
+            - |
+              echo -e "Downloading {{ ADJOINSCRIPT }} script ...\n"
+              cd {{ BASEDIR }}
+              curl -so {{ BASEDIR }}/{{ DESTADJOINSCRIPT }} http://{{ DOWNLOADSVR }}/aws/SSSD/graviton/{{ ADJOINSCRIPT }}
+              chmod 755 {{ BASEDIR }}/{{ DESTADJOINSCRIPT }}
+              dos2unix {{ BASEDIR }}/{{ DESTADJOINSCRIPT }}
+              ls -ltr {{ BASEDIR }}/{{ DESTADJOINSCRIPT }}
+              

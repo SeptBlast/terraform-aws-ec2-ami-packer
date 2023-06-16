@@ -1,0 +1,31 @@
+name: MIT-Windows-Create-Local-Admin
+description: Create Local Admin
+schemaVersion: 1.0
+
+phases:
+  - name: build
+    steps:
+      - name: MIT-Windows-Create-Local-Admin
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              $UserName= "AWS_Adm"
+              $UserCreds= "_6Tu#eNaBr"
+              NET USER $UserName $userCreds /ADD /y
+              If (!$Error) {
+                Write-Output "Success: Created local user $UserName."
+              } Else {
+                Write-Output "Failure: Created local user $UserName."
+              }
+              
+              NET LOCALGROUP "Administrators" $UserName /add
+              If (!$Error) {
+                Write-Output "Success: Added $UserName as local administrator."
+              } Else {
+                Write-Output "Failure: Adding $UserName as local administrator."
+              }

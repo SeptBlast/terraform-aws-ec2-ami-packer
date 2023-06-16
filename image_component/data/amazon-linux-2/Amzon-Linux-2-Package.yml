@@ -1,0 +1,117 @@
+# Created by HanumanthaRao MVL - Dec 2022.
+name: MIT-AmzLnx-NonAD-Packages
+description: Component for Installing Packages on AmzLinux - NonAD
+schemaVersion: 1.0
+constants:
+    - BASEDIR:
+          type: string
+          value: /root
+    - LOGDIR:
+          type: string
+          value: /var/log
+    - DOWNLOADSVR:
+          type: string
+          value: 10.32.5.93
+    - CENREPSVR:
+          type: string
+          value: 10.32.5.139
+    - SPLUNKPKG:
+          type: string
+          value: SplunkUF-EXT.rpm
+
+phases:
+    - name: build
+      steps:
+          - name: Splunk-Install
+            action: ExecuteBash
+            inputs:
+                commands:
+                    - |
+                        echo -e "Installing and Setting Splunk Forwarder \n"
+                        mkdir /var/tmp/splunk_install
+                        cd /var/tmp/splunk_install
+                        curl -O http://{{ DOWNLOADSVR }}/splunk/{{ SPLUNKPKG }}
+                        yum localinstall --nogpgcheck /var/tmp/splunk_install/{{ SPLUNKPKG }} -y
+                        /opt/splunkforwarder/bin/splunk status --accept-license --answer-yes --no-prompt
+                        systemctl restart SplunkForwarder.service
+                        echo -e "Splunk Forwarder Installed"
+                        systemctl status SplunkForwarder.service
+                        echo "Downloading Splunk Reset Script... "
+                        cd {{ BASEDIR }}
+                        wget http://{{ DOWNLOADSVR }}/aws/Post_Build_scripts/splunk_reset.sh
+                        chmod +x {{ BASEDIR }}/splunk_reset.sh
+                        ls -ltr {{ BASEDIR }}/splunk_reset.sh
+          - name: Qualys-Install
+            action: ExecuteBash
+            inputs:
+                commands:
+                    - |
+                        echo -e "Installing Qualys Agent \n"
+                        cd {{ BASEDIR }}
+                        curl -O http://{{ DOWNLOADSVR }}/aws/qualys_agent/QualysCloudAgent.rpm
+                        rpm -ivh QualysCloudAgent.rpm
+                        echo -e "Installed Qualys Agent \n"
+          - name: CloudHealthAgent-Install
+            action: ExecuteBash
+            inputs:
+                commands:
+                    - |
+                        echo -e "Installing Cloud Health \n"
+                        cd {{ BASEDIR }}
+                        wget https://s3.amazonaws.com/remote-collector/agent/v20/install_cht_perfmon.sh -O install_cht_perfmon.sh
+                        sudo sh install_cht_perfmon.sh 20 0dbdc3f4-b508-44d3-ab14-112ba8bd6091 aws
+                        echo -e "Installed Cloud Health\n"
+                        sudo /etc/init.d/cht_perfmon restart
+                        /sbin/service cht_perfmon restart
+          - name: CrowdStrike-Installation
+            action: ExecuteBash
+            inputs:
+                commands:
+                    - |
+                        echo -e "Downloading CrowdStrike Installation Script ... \n"
+                        cd {{ BASEDIR }}
+                        wget http://{{ DOWNLOADSVR }}/aws/SSSD/NonAD/falcon_sensor_install_sssd.sh
+                        chmod +x {{ BASEDIR }}/falcon_sensor_install_sssd.sh
+                        /bin/bash {{ BASEDIR }}/falcon_sensor_install_sssd.sh | tee $LOGDIR/falcon_sensor_install.log
+                        echo "Downloading falcon sensor start script ..."
+                        wget http://{{ DOWNLOADSVR }}/aws/SSSD/NonAD/falcon_sensor.sh
+                        chmod +x {{ BASEDIR }}/falcon_sensor.sh
+                        ls -ltr {{ BASEDIR }}/falcon_sensor.sh
+          - name: SeptBlast-CACert-Install
+            action: ExecuteBash
+            inputs:
+                commands:
+                    - |
+                        echo -e "Installing SeptBlast SHA2 Root CA Certifate \n"
+                        cp -pr /etc/pki /etc/pki.bkp
+                        cd {{ BASEDIR }}
+                        curl -O http://{{ DOWNLOADSVR }}/SeptBlast_CA_CertFiles/PTC-WBRTCERT702RootCAs.zip
+                        wget http://{{ DOWNLOADSVR }}/SeptBlast_CA_CertFiles/Application_Issuing_CA.crt -P /etc/pki/ca-trust/source/anchors
+                        wget http://{{ DOWNLOADSVR }}/SeptBlast_CA_CertFiles/AutoEnrollment_Issuing_CA.crt -P /etc/pki/ca-trust/source/anchors
+                        wget http://{{ DOWNLOADSVR }}/SeptBlast_CA_CertFiles/Mobile_Issuing_CA.crt -P /etc/pki/ca-trust/source/anchors
+                        wget http://{{ DOWNLOADSVR }}/SeptBlast_CA_CertFiles/SeptBlast_Root_CA.crt -P /etc/pki/ca-trust/source/anchors
+                        unzip {{ BASEDIR }}/PTC-WBRTCERT702RootCAs.zip
+                        cp {{ BASEDIR }}/CAs/PTC-WBRTCERT702IntermediateCA.crt /etc/pki/ca-trust/source/anchors/
+                        cp {{ BASEDIR }}/CAs/PTC-WBRTCERT702Root.crt /etc/pki/ca-trust/source/anchors/
+                        update-ca-trust check
+                        update-ca-trust enable 
+                        update-ca-trust force-enable
+                        update-ca-trust extract
+                        ls -l /etc/pki/ca-trust/extracted/java/cacerts
+                        ls -l /etc/pki/ca-trust/extracted/openssl/ca-bundle.trust.crt
+                        ls -l /etc/pki/ca-trust/extracted/pem/*
+          - name: CleanUp
+            action: ExecuteBash
+            inputs:
+                commands:
+                    - |
+                        echo -e "Removing files downloaded during ami customization \n"
+                        rm -f /root/infosec_deploymentclient.tar
+                        rm -f /root/infosec_disable_ssl3.tar
+                        rm -f /root/quest-dnsupdate-4.1.2-1.x86_64.rpm
+                        rm -f /root/vasclnt-4.1.2-23022.x86_64.rpm
+                        rm -f /root/s.tar
+                        rm -rf {{ BASEDIR }}/PTC-WBRTCERT702RootCAs.zip
+                        rm -rf {{ BASEDIR }}/CAs
+                        rm -rf {{ BASEDIR }}/awscli-bundle.zip
+                        rm -rf {{ BASEDIR }}/awscli-bundle

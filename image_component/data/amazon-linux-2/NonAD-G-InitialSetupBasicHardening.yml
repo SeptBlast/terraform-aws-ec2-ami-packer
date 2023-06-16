@@ -1,0 +1,169 @@
+# Created by HanumanthaRao MVL - 8Feb 2023.
+name: TSG-Graviton-AmzLnx-NonAD-InitialSetupBasicHardening
+description: Component for AmzLinux Graviton NonAD Initial setup and Basic Hardening.
+schemaVersion: 1.0
+constants:
+  - BASEDIR:
+      type: string
+      value: /root
+  - LOGDIR:
+      type: string
+      value: /var/log
+  - DOWNLOADSVR:
+      type: string
+      value: 10.32.5.93
+  - CENREPSVR:
+      type: string
+      value: 10.32.5.139
+  - PKGLIST:
+      type: string
+      value: pkglist.G-AmazonLinux
+phases:
+  - name: build
+    steps:
+      - name: BashProfileSetup
+        action: ExecuteBash
+        inputs:
+          commands:
+            - |
+              echo -e "Setting default umask for interactive bash instances \n"
+              cp -p /etc/login.defs /etc/login.defs.bkp
+              cp /etc/bashrc -p /etc/bashrc.default
+              cp /etc/profile -p /etc/profile.default
+              /bin/sed -i -e 's/umask 002/umask 0027/g ; s/umask 022/umask 0027/g' /etc/bashrc
+              /bin/sed -i -e 's/umask 002/umask 0027/g ; s/umask 022/umask 0027/g' /etc/profile
+              /bin/sed -i -e 's/umask 002/umask 0027/g ; s/umask 022/umask 0027/g' /etc/csh.cshrc
+              echo -e "Setting History settings Configuration as per Moody's Platform System Engineering \n"
+              cat <<GO_SYSIN_DD >> /etc/bashrc
+              if [ "\$PS1" ]; then
+                #
+                # Enable bash history
+                #
+                set -o history
+                #
+                # bash history file length (very large)
+                #
+                export HISTFILESIZE=300000
+
+                #
+                # Multi-line commands are stored in the history
+                #
+                shopt -s cmdhist
+
+                #
+                # No duplicates and empty lines
+                #
+                export HISTCONTROL=ignoreboth
+
+                #
+                # Ignore certain commands
+                #
+                export HISTIGNORE="&:ls:[bf]g:pwd:exit"
+
+                #
+                # Append the history to the histfile instead of overwriting it.
+                #
+                shopt -s histappend
+
+                #
+                # Prepend a timestamp on the history lines
+                #
+                export HISTTIMEFORMAT='%Y-%m-%d@%H:%M:%S '
+              fi
+              GO_SYSIN_DD
+              echo -e "Increasing History size \n"
+              sed -i -c 's/HISTSIZE=[0-9]*/HISTSIZE=150000/g' /etc/profile
+      - name: CreateUsers
+        action: ExecuteBash
+        inputs:
+          commands:
+            - |
+              echo -e "Creating Cloud OPS user account cldunixops and copying ssh keys \n"
+              mkdir -p /root/.ssh
+              touch /root/.ssh/authorized_keys
+              /bin/chown -R root:root /root/.ssh
+              /bin/sed -i 's/#PermitRootLogin\ yes/PermitRootLogin\ yes/' /etc/ssh/sshd_config
+              /sbin/service sshd restart
+              useradd  -u 19096 -c "Cloud Unix Ops Support User" -G wheel cldunixops
+              /bin/sed -i 's/cldunixops\:\!\!/cldunixops\:NP/g'  /etc/shadow
+              touch /tmp/skip_cleanup_ssh_files
+              mkdir -p /home/cldunixops/.ssh
+              for usr in other cldunixops mitunixops
+              do
+                credfile="${usr}.info"
+                curl -so {{ BASEDIR }}/${credfile} http://{{ DOWNLOADSVR }}/aws/linuxusers/${credfile}
+                if [ $? -eq 0 ] && [ -s {{ BASEDIR }}/${credfile} ]; then
+                  echo -e "${credfile} downloaded successfully.\n"
+                  ls -ltr {{ BASEDIR }}/${credfile}
+                fi
+              done
+              
+              #Update these once the jumpservers are setup tommorrow 
+              echo -e "Updating SSH Key pairs from Cloud Jump Servers"
+              cp {{ BASEDIR }}/other.info /root/.ssh/authorized_keys
+              cp {{ BASEDIR }}//cldunixops.info /home/cldunixops/.ssh/authorized_keys
+
+              /bin/chown -R cldunixops:cldunixops /home/cldunixops/
+              echo -e "Creating MIT OPS user account and copying ssh keys \n"
+              useradd  -u 17337 -c "MIT Unix Ops Support User" -G wheel mitunixops
+              /bin/sed -i 's/mitunixops\:\!\!/mitunixops\:NP/g'  /etc/shadow
+              mkdir -p /home/mitunixops/.ssh
+              cp {{ BASEDIR}}/mitunixops.info /home/mitunixops/.ssh/authorized_keys
+              /bin/chown mitunixops:mitunixops /home/mitunixops/.ssh
+              /bin/chown mitunixops:mitunixops /home/mitunixops/.ssh/authorized_keys
+              /bin/chown -R root:root /root/.ssh
+
+              cat /root/.ssh/authorized_keys
+              ls -ltr /root/.ssh/authorized_keys
+              cat /home/cldunixops/.ssh/authorized_keys
+              ls -ltr /home/cldunixops/.ssh/authorized_keys              
+              cat /home/mitunixops/.ssh/authorized_keys
+              ls -ltr /home/mitunixops/.ssh/authorized_keys
+              rm -f {{ BASEDIR }}/*.info
+      - name: InstallBasePackages
+        action: ExecuteBash
+        inputs:
+          commands:
+            - |
+              echo -e "Updating to latest patches \n"
+              yum update -y --nogpgcheck
+              echo -e "Downloading the package list for Amazon Linux.."
+              curl -so {{ BASEDIR }}/{{ PKGLIST }} http://{{ DOWNLOADSVR }}/aws/{{ PKGLIST }}
+              if [ $? -eq 0 ] && [ -s {{ BASEDIR }}/{{ PKGLIST }} ]; then
+                echo -e "Package list file downloaded successfully. Installing packages from default Amazon repos \n"
+                for pkg in `cat {{ BASEDIR }}/{{ PKGLIST }}`
+                do
+                  echo -e "Installing $pkg ..."
+                  yum -y install --nogpgcheck $pkg
+                  sleep 5
+                done
+              else
+                echo -e "Failed to download the package list file."
+              fi
+      - name: SetUpPAMConfig
+        action: ExecuteBash
+        inputs:
+          commands:
+            - |
+              # Copy the updated password-auth & system-auth from root
+              echo -e "Copying Pam config files ... \n"
+              cd {{ BASEDIR }}
+              wget http://{{ DOWNLOADSVR }}/aws/SSSD/password-auth-ac-sssd-7
+              mv password-auth-ac-sssd-7 password-auth-ac
+              wget http://{{ DOWNLOADSVR }}/aws/SSSD/system-auth-ac-sssd-7
+              mv system-auth-ac-sssd-7 system-auth-ac
+              wget http://{{ DOWNLOADSVR }}/aws/SSSD/runuser.sssd
+              cd /etc/pam.d
+              unlink system-auth
+              unlink password-auth
+              mv system-auth-ac system-auth-ac.bkp
+              mv password-auth-ac password-auth-ac.bkp
+              mv runuser runuser.bkp
+              mv {{ BASEDIR }}/system-auth-ac /etc/pam.d
+              mv {{ BASEDIR }}/password-auth-ac /etc/pam.d
+              mv {{ BASEDIR }}/runuser.sssd runuser
+              chmod 644 /etc/pam.d/system-auth-ac
+              chmod 644 /etc/pam.d/password-auth-ac
+              chmod 644 /etc/pam.d/runuser
+              ln -s system-auth-ac system-auth
+              ln -s password-auth-ac password-auth

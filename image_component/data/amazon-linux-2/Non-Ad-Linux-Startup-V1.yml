@@ -1,0 +1,61 @@
+#created by Hanumanth#
+name: MIT-EN-Linux-NPRD-Startup-V1
+description: Component for downloading startup script and creating runonce service.
+schemaVersion: 1.0
+constants:
+  - BASEDIR:
+      type: string
+      value: /root
+  - DOWNLOADSVR:
+      type: string
+      value: 10.32.5.93
+  - ADJOINSCRIPT:
+      type: string
+      value: nonadjoin-nprd-sssd.sh
+  - DESTADJOINSCRIPT:
+      type: string
+      value: nonadjoin-nprd.sh
+  - RUNONCE:
+      type: string
+      value: /etc/systemd/system/runonce.service
+      
+phases:
+  - name: build
+    steps:
+      - name: DownloadStartupScript
+        action: ExecuteBash
+        inputs:
+          commands:
+            - |
+              echo -e "Downloading {{ ADJOINSCRIPT }} script ...\n"
+              cd {{ BASEDIR }}
+              curl -so {{ BASEDIR }}/{{ DESTADJOINSCRIPT }} http://{{ DOWNLOADSVR }}/aws/SSSD/{{ ADJOINSCRIPT }}
+              chmod 755 {{ BASEDIR }}/{{ DESTADJOINSCRIPT }}
+              dos2unix {{ BASEDIR }}/{{ DESTADJOINSCRIPT }}
+              ls -ltr {{ BASEDIR }}/{{ DESTADJOINSCRIPT }}
+      - name: CreateRunOnceService
+        action: ExecuteBash
+        inputs:
+          commands:
+            - |
+              echo -e "Creating RunOnce Service..\n"
+              cat <<RUNONCE >> {{ RUNONCE }}
+                [Unit]
+                Description=RunOnce
+                After=local-fs.target
+                After=network.target
+
+                [Service]
+                ExecStart={{ BASEDIR }}/{{ DESTADJOINSCRIPT }}
+                RemainAfterExit=false
+                Type=oneshot
+
+                [Install]
+                WantedBy=multi-user.target
+              RUNONCE
+              chmod +x {{ RUNONCE }}
+              ls -ltr {{ RUNONCE }}
+              cat {{ RUNONCE }}
+              echo "Enabling runonce service ..."
+              systemctl enable runonce.service
+              

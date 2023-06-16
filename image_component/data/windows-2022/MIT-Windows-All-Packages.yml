@@ -1,0 +1,61 @@
+name: MIT-Windows-All-Packages
+description: MIT Windows Component for downloading and extracting the packages.
+schemaVersion: 1.0
+
+phases:
+  - name: build
+    steps:
+      - name: MIT-Windows-All-Packages
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Executing MIT-Windows-Packages ..."
+              $AllPackages = @(
+              'bginfo',
+              'CloudHealthAgent',
+              'CrowdStrike',              
+              'Hitachi_Servers_New',              
+              'PsTools',
+              'QualysCloudAgent',              
+              'SCCMClient',
+              'Splunk-Trust',              
+              'Windows2019_Hardenings'
+              )
+
+              foreach ($BuildPackage in $AllPackages) {
+                $Error.Clear()
+                $Package = "$($BuildPackage).zip"
+                $NewDirectory = "C:\MITSetup"
+                $DownloadDestination = "C:\MITSetup\$Package"
+                Add-Type -assembly "system.io.compression.filesystem"
+                try {
+                    copy-s3object -BucketName aws-mit-windowsami-packagestore -Key $Package  -LocalFile "$DownloadDestination" -Force
+                    Write-Output "Success: Downloaded $DownloadDestination."
+                }
+                catch {
+                    Write-Error "Failure: Downloading $Package."
+                }
+
+                $BackUpPath = $NewDirectory + "\" + $Package              
+                if ($BuildPackage -eq "bginfo") {
+                    $Destination = "C:\"
+                } elseif ($BuildPackage -eq "PsTools") {              
+                    $Destination = "C:\Windows"
+                } else {
+                    $Destination = $NewDirectory
+                }
+                try {
+                    Write-Output "Extracting $BackupPath to $Destination"
+                    [System.IO.Compression.ZipFile]::ExtractToDirectory($BackUpPath, $Destination)
+                    Write-Output "Success: Extracting $($Package)."
+                }
+                catch {
+                    Write-Error "Failure: Extracting $($Package)."
+                }
+              }           
+

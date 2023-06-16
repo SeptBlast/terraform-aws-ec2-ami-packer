@@ -1,0 +1,170 @@
+name: MIT-Windows-Remediations-Hardenings-1
+description: Hardenings and Remediations for Windows AMIs.
+schemaVersion: 1.0
+
+phases:
+  - name: build
+    steps:
+      - name: MIT-Windows-VulnerabilityRemediation
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Executing MIT-Windows-VulnerabilityRemediation ..."
+              #Disable SMB
+              Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -Name SMB1 -Type DWORD -Value 0 -Force
+              sc.exe config lanmanworkstation depend= bowser/mrxsmb20/nsi
+              sc.exe config mrxsmb10 start= disabled
+              #SSL Config
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\PCT 1.0\Server" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\PCT 1.0\Client" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\PCT 1.0\Client" /v DisabledByDefault /t REG_DWORD /d 00000001 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 2.0\Server" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 2.0\Client" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 2.0\Client" /v DisabledByDefault /t REG_DWORD /d 00000001 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 3.0\Server" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 3.0\Client" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 3.0\Client" /v DisabledByDefault /t REG_DWORD /d 00000001 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\PCT 1.0\Server" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Client" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Client" /v DisabledByDefault /t REG_DWORD /d 00000001 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Server" /v Enabled /t REG_DWORD /d 00000001 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Client" /v Enabled /t REG_DWORD /d 00000001 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Client" /v DisabledByDefault /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Server" /v Enabled /t REG_DWORD /d 00000001 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Client" /v Enabled /t REG_DWORD /d 00000001 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Client" /v DisabledByDefault /t REG_DWORD /d 00000000 /f
+              #WinHTTPproxy SecureProtocols
+              reg add "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp" /v "DefaultSecureProtocols" /t REG_DWORD /d 0x00000A80 /f
+              reg add "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp" /v "DefaultSecureProtocols" /t REG_DWORD /d 0x00000A80 /f
+              reg add "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp" /v "WINHTTP_OPTION_SECURE_PROTOCOLS" /t REG_DWORD /d 0x00000A80 /f
+              reg add "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp" /v "WINHTTP_OPTION_SECURE_PROTOCOLS" /t REG_DWORD /d 0x00000A80 /f
+              reg add "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings" /v "SecureProtocols" /t REG_DWORD /d 0x00000A80 /f
+              #Ciphers Disablement
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\DES 56/56" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC2 40/128" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC2 56/128" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC2 128/128" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC4 40/128" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC4 56/128" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC4 64/128" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC4 128/128" /v Enabled /t REG_DWORD /d 00000000 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\Triple DES 168" /v Enabled /t REG_DWORD /d 00000000 /f
+              #Remote Desktop Hardenings
+              # Remote Desktop Services: Enable NLA Requirement
+              (Get-WmiObject -class "Win32_TSGeneralSetting" -Namespace root\cimv2\terminalservices -Filter "TerminalName='RDP-tcp'").SetUserAuthenticationRequired(1) | Out-Null
+              # Remote Desktop Services: Require 'High' level of encryption
+              (Get-WmiObject -class "Win32_TSGeneralSetting" -Namespace root\cimv2\terminalservices -Filter "TerminalName='RDP-tcp'").SetEncryptionLevel(3) | Out-Null
+              # Remote Desktop Services: Set Security Layer to SSL
+              (Get-WmiObject -class "Win32_TSGeneralSetting" -Namespace root\cimv2\terminalservices -Filter "TerminalName='RDP-tcp'").SetSecurityLayer(2) | Out-Null
+              #Enable LSA Protection
+              reg add "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\LSASS.exe" /v AuditLevel /t REG_DWORD /d 8 /f
+              reg add "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" /v RunAsPPL /t REG_DWORD /d 1 /f
+              If (!$Error) {
+                Write-Output "Success: Vulnerability remediation."
+              } Else {
+                Write-Output "Failure: Vulnerability remediation."
+              }
+              Start-Sleep -Seconds 10
+
+      - name: MIT-Windows-VulnerabilityRemediation2
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Executing MIT-Windows-VulnerabilityRemediation2 ..."
+              Clear-Host
+              Function Fix-ServicePath {
+                  Param (
+                  [Switch]$FixServices=$true,
+                  [Switch]$FixUninstall,
+                  [Switch]$FixEnv,
+                  [Switch]$WhatIf
+                  )
+                  $FixParameters = @()
+                  if ($FixServices){
+                      $FixParameters += @{"Path" = "HKLM:\SYSTEM\CurrentControlSet\Services\" ; "ParamName" = "ImagePath"}
+                  }
+                  if ($FixUninstall){
+                      $FixParameters += @{"Path" = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\" ; "ParamName" = "UninstallString"}
+                      If (Test-Path "$($env:SystemDrive)\Program Files (x86)\"){
+                          $FixParameters += @{"Path" = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\" ; "ParamName" = "UninstallString"}
+                      }
+                  }
+
+                  foreach ($FixParameter in $FixParameters){
+                      Get-ChildItem $FixParameter.path | foreach {
+                          $OriginalPath = (Get-ItemProperty "$($($_).name.replace('HKEY_LOCAL_MACHINE', 'HKLM'))")
+                          $ImagePath = $OriginalPath.$($FixParameter.ParamName)
+                          if ($FixEnv){
+                              if ($($OriginalPath.$($FixParameter.ParamName)) -match '%(?''envVar''[^%]+)%'){
+                                  $EnvVar = $Matches['envVar']
+                                  $FullVar = (Get-Childitem env: | Where {$_.Name -eq $EnvVar}).value
+                                  $ImagePath = $OriginalPath.$($FixParameter.ParamName) -replace "%$EnvVar%",$FullVar
+                                  Clear-Variable Matches
+                              }
+                          }
+                          If (($ImagePath -like "* *") -and ($ImagePath -notlike '"*"*') -and ($ImagePath -like '*.exe*')){
+                              if ((($FixParameter.ParamName -eq 'UninstallString') -and ($ImagePath -NotMatch 'MsiExec(\.exe)?')) -or ($FixParameter.ParamName -eq 'ImagePath')){
+                                  $NewPath = ($ImagePath -split ".exe ")[0]
+                                  $key = ($ImagePath -split ".exe ")[1]
+                                  $triger = ($ImagePath -split ".exe ")[2]
+                                  $NewValue = ''
+                                  If (-not ($triger | Measure-Object).count -ge 1){
+                                      If (($NewPath -like "* *") -and ($NewPath -notlike "*.exe")){
+                                          $NewValue = "`"$NewPath.exe`" $key"
+                                      }
+                                      ElseIf (($NewPath -like "* *") -and ($NewPath -like "*.exe")){
+                                          $NewValue = "`"$NewPath`""
+                                      }
+                                      if ((-not ([string]::IsNullOrEmpty($NewValue))) -and ($NewPath -like "* *")) {
+                                          try {
+                                              $soft_service = $(if($FixParameter.ParamName -Eq 'ImagePath'){'Service'}Else{'Software'})
+                                              "$(get-date -format u) : Old Value : $soft_service : '$($OriginalPath.PSChildName)' - $($OriginalPath.$($FixParameter.ParamName))"
+                                              "$(get-date -format u) : Expected : $soft_service : '$($OriginalPath.PSChildName)' - $NewValue"
+                                              If (! $WhatIf){
+                                                  Set-ItemProperty -Path $OriginalPath.PSPath -Name $($FixParameter.ParamName) -Value $NewValue -ErrorAction Stop
+                                                  $DisplayName = ''
+                                                  $keyTmp = (Get-ItemProperty -Path $OriginalPath.PSPath)
+                                                  if ($soft_service -match 'Software'){
+                                                      $DisplayName = $keyTmp.DisplayName
+                                                  }
+                                                  If ($keyTmp.$($FixParameter.ParamName) -eq $NewValue){
+                                                      "$(get-date -format u) : SUCCESS : Path value was changed for $soft_service '$(if($DisplayName){$DisplayName}else{$OriginalPath.PSChildName})'"
+                                                  }
+                                                  Else {
+                                                      "$(get-date -format u) : ERROR : Something is going wrong. Path was not changed for $soft_service '$(if($DisplayName){$DisplayName}else{$OriginalPath.PSChildName})'."
+                                                  }
+                                              }
+                                          }
+                                          Catch {
+                                              "$(get-date -format u) : ERROR : Something is going wrong. Value changing failed in service '$($OriginalPath.PSChildName)'."
+                                              "$(get-date -format u) : ERROR : $($Error[0].Exception.Message)"
+                                          }
+                                          Clear-Variable NewValue
+                                      }
+                                  }
+                              }
+                          }               
+                          If (($triger | Measure-Object).count -ge 1) {
+                          "$(get-date -format u) : ERROR : Can't parse $($OriginalPath.$($FixParameter.ParamName)) in registry $($OriginalPath.PSPath -replace 'Microsoft\.PowerShell\.Core\Registry\:\:') "
+                          }
+                      }
+                  }
+              }
+              Fix-ServicePath -FixUninstall -FixServices
+              reg add "HKEY_LOCAL_MACHINE:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverride /t REG_DWORD /d 72 /f
+              reg add "HKEY_LOCAL_MACHINE:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverrideMask /t REG_DWORD /d 3 /f
+              reg add "HKEY_LOCAL_MACHINE:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization" /v MinVmVersionForCpuBasedMitigations /t REG_SZ /d 1.0 /f
+              reg add "HKEY_LOCAL_MACHINE:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverride /t REG_DWORD /d 72 /f
+              reg add "HKEY_LOCAL_MACHINE:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverrideMask /t REG_DWORD /d 3 /
+

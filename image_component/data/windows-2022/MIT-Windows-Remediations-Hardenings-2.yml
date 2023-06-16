@@ -1,0 +1,151 @@
+name: MIT-Windows-Remediations-Hardenings-2
+description: Hardenings and Remediations for Windows AMIs.
+schemaVersion: 1.0
+
+phases:
+  - name: build
+    steps:
+      - name: MIT-Windows-SSLCertRDP
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Executing MIT-Windows-SSLCertRDP ..."
+              $s3Key = "SSLCertRDP.ps1"
+              $Destination = "C:\MITSetup\SSLCertRDP.ps1"
+              copy-s3object -BucketName aws-mit-windowsami-packagestore -Key "$s3Key"  -LocalFile "$Destination" -Force
+              If (!$Error) {
+                  Write-Output "Success: Copied s3 file s3://aws-mit-windowsami-packagestore/$s3Key to $Destination"
+              } Else {
+                  Write-Output "Failure: Copying s3 file s3://aws-mit-windowsami-packagestore/$s3Key to $Destination"
+              }
+              Import-Module ScheduledTasks
+              $A = New-ScheduledTaskAction -Execute "Powershell.exe" -Argument "-NoProfile -NoLogo -windowstyle Hidden -ExecutionPolicy Bypass -File C:\MITSetup\SSLCertRDP.ps1"
+              $T = New-ScheduledTaskTrigger -AtStartup
+              $S = New-ScheduledTaskSettingsSet -RestartCount 1
+              $D = New-ScheduledTask -Action $A -Trigger $T -Settings $S
+              Register-ScheduledTask -TaskName SSLCertRDP -InputObject $D -User SYSTEM
+
+      - name: MIT-Windows-VulnerabilityRemediation-April21
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Executing IT-Windows-VulnerabilityRemediation-April21 ..."                            
+              #Template_QID105228
+              $guestacctenabledcheck = (get-localuser -name guest).Enabled
+              $guestacctnamecheck = (get-localuser -name guest).Name
+              If($guestacctnamecheck -eq "Guest") {
+                  If($guestacctenabledcheck -eq $true) {
+                      Disable-LocalUser -Name "Guest"
+                  }
+
+                  Rename-LocalUser -Name "Guest" -NewName "Zz_Guest"
+              }
+              #Template_QID90007
+              $registrypath = "HKLM:\Software\Microsoft\Windows Nt\CurrentVersion\Winlogon"
+              $name = "CachedLogonsCount"
+              $value = "0"
+              New-ItemProperty -Path $registrypath -Name $name -Value $value -PropertyType String -Force | Out-Null
+              $Error.Clear()
+              #Template_QID90043
+              $registrypath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
+              $registrypath2 = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters"
+              $name1 = "EnableSecuritySignature"
+              $name2 = "Requiresecuritysignature"
+              $value = "1"
+              New-ItemProperty -Path $registrypath -Name $name1 -Value $value -PropertyType DWORD -Force | Out-Null
+              New-ItemProperty -Path $registrypath -Name $name2 -Value $value -PropertyType DWORD -Force | Out-Null
+              New-ItemProperty -Path $registrypath2 -Name $name1 -Value $value -PropertyType DWORD -Force | Out-Null
+              New-ItemProperty -Path $registrypath2 -Name $name2 -Value $value -PropertyType DWORD -Force | Out-Null
+              If (!$Error) {
+                  Write-Output "Success:  QID90043 remediation"
+              } Else {
+                  Write-Output "Failure: QID90043 remediation."
+              }
+              #Template_QID90213
+              $registrypath = "HKLM:\SYSTEM\CurrentControlSet\Services\Afd\Parameters"
+              $name = "DisableAddressSharing"
+              $value = "1"
+              New-ItemProperty -Path $registrypath -Name $name -Value $value -PropertyType DWORD -Force | Out-Null
+              #IPv4PriorityOverIPv6
+              Invoke-Command -ScriptBlock { netsh interface ipv6 set prefixpolicy ::ffff:0:0/96 46 4 } | Out-Null
+
+      - name: MIT-Windows-TLS-Remediation
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Abort
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Executing MIT-Windows-TLS-Remediation ..."                                          
+              Write-Output "... Remediating TLS"
+              #Tighten up the .NET Framework
+              $NetRegistryPath = "HKLM:\SOFTWARE\Microsoft\.NETFramework\v4.0.30319"
+              New-ItemProperty -Path $NetRegistryPath -Name "SchUseStrongCrypto" -Value "1" -PropertyType DWORD -Force | Out-Null
+              $NetRegistryPath = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\.NETFramework\v4.0.30319"
+              New-ItemProperty -Path $NetRegistryPath -Name "SchUseStrongCrypto" -Value "1" -PropertyType DWORD -Force | Out-Null
+              #Force TLS 1.2
+              $ProtocolList       = @("SSL 2.0","SSL 3.0","TLS 1.0", "TLS 1.1", "TLS 1.2")
+              $ProtocolSubKeyList = @("Client", "Server")
+              $DisabledByDefault = "DisabledByDefault"
+              $Enabled = "Enabled"
+              $registryPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\"
+              foreach($Protocol in $ProtocolList) {
+                  Write-Output " In 1st For loop"
+                  foreach($key in $ProtocolSubKeyList) {
+                      $currentRegPath = $registryPath + $Protocol + "\" + $key
+                      Write-Output " Current Registry Path $currentRegPath"
+                      if(!(Test-Path $currentRegPath)) {
+                          Write-Output "...... Creating the registry"
+                          New-Item -Path $currentRegPath -Force | out-Null
+                      }
+                      if($Protocol -eq "TLS 1.2") {
+                          Write-Output "...... Working for TLS 1.2"
+                          New-ItemProperty -Path $currentRegPath -Name $DisabledByDefault -Value "0" -PropertyType DWORD -Force | Out-Null
+                          New-ItemProperty -Path $currentRegPath -Name $Enabled -Value "1" -PropertyType DWORD -Force | Out-Null
+                      }
+                      else {
+                          Write-Output "...... Working to disable previous versions of SSL/TLS protocols"
+                          New-ItemProperty -Path $currentRegPath -Name $DisabledByDefault -Value "1" -PropertyType DWORD -Force | Out-Null
+                          New-ItemProperty -Path $currentRegPath -Name $Enabled -Value "0" -PropertyType DWORD -Force | Out-Null
+                      }
+                  }
+              }
+              #Fix TLS in IE
+              REG LOAD "hku\Default" "C:\Users\Default\NTUSER.DAT"
+              REG ADD "HKEY_CURRENT_USER:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v SecureProtocols /t REG_DWORD /d 2048 /f
+              REG UNLOAD "hku\Default"
+              REG ADD "HKEY_LOCAL_MACHINE:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings" /v SecureProtocols /t REG_DWORD /d 2048 /f
+
+              # WINHTTP
+              reg add "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp" /v "DefaultSecureProtocols" /t REG_DWORD /d 2048 /f
+              reg add "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp" /v "DefaultSecureProtocols" /t REG_DWORD /d 2048 /f
+              reg add "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp" /v "WINHTTP_OPTION_SECURE_PROTOCOLS" /t REG_DWORD /d 2048 /f
+              reg add "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp" /v "WINHTTP_OPTION_SECURE_PROTOCOLS" /t REG_DWORD /d 2048 /f
+              reg add "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings"/v "SecureProtocols" /t REG_DWORD /d 2048 /f
+
+      - name: MIT-Windows-PrintSpooler
+        action: ExecutePowerShell
+        timeoutSeconds: 300
+        onFailure: Ignore
+        maxAttempts: 1
+        inputs: 
+            commands:
+            - |
+              $Error.Clear()
+              Write-Output "Executing MIT-Windows-PrintSpooler ..."
+              Write-Output "91785 remediation......"
+              Stop-Service -Name Spooler -Force
+              Set-Service -Name Spooler -StartupType Disabled
+

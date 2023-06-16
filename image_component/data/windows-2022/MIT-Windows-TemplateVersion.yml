@@ -1,0 +1,47 @@
+name: MIT-Windows-TemplateVersion
+description: Windows TemplateVersion for 2012 and above.
+schemaVersion: 1.0
+
+phases:
+    - name: build
+      steps:
+          - name: MIT-Windows-Update-TemplateVersion
+            action: ExecutePowerShell
+            timeoutSeconds: 300
+            onFailure: Abort
+            maxAttempts: 1
+            inputs:
+                commands:
+                    - |
+                        Write-Output "Executing MIT-Windows-Update-TemplateVersion ..."
+                        $Date = (Get-Date).ToString("yyyyMM")
+                        $OS = (Get-CimInstance -ClassName Win32_OperatingSystem).Version
+
+                        switch -Wildcard ($OS) {
+
+                            "6.3*" {
+                                $OSValue = "W2K12"
+                                Write-Output "Server 2012R2 detected."
+                            }
+
+                            "10.0.14393*" {
+                                $OSValue = "W2K16"
+                                Write-Output "Server 2016 detected."
+                            }
+
+                            "10.0.17763*" {
+                                $OSValue = "W2K19"
+                                Write-Output "Server 2019 detected."
+                            }
+
+                            "10.0.20348*" {
+                                $OSValue = "W2K22"
+                                Write-Output "Server 2022 detected."
+                            }
+                        }
+
+                        $TemplateValue = "AWS_$($OSValue)_$($Date)_1.0"
+                        $registrypath = "HKLM:\SOFTWARE\SeptBlast\"
+                        $name = "TemplateInitialVersion"
+                        New-Item -Path $registrypath
+                        New-ItemProperty -Path $registrypath -Name $name -Value $TemplateValue -PropertyType String -Force | Out-Null

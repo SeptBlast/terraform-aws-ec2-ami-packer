@@ -1,0 +1,202 @@
+name: MIT-AmzLnx-Hardening1
+description: Component for AmzLinux OS Hardening.
+schemaVersion: 1.0
+constants:
+  - BASEDIR:
+      type: string
+      value: /root
+  - LOGDIR:
+      type: string
+      value: /var/log
+  - DOWNLOADSVR:
+      type: string
+      value: 10.32.5.93
+  - CENREPSVR:
+      type: string
+      value: 10.32.5.139
+phases:
+  - name: build
+    steps:
+      - name: BaseSecurityConfig
+        action: ExecuteBash
+        inputs:
+          commands:
+            - |
+              echo -e "Starting BaseSecurityConfig ...\n"
+              echo -e "Setting SELinux to Permissive mode in config file \n"
+              /usr/sbin/setenforce 0
+              sed -i 's/SELINUX=enforcing/SELINUX=permissive/g' /etc/selinux/config
+              sed -i 's/SELINUX=enforcing/SELINUX=permissive/g' /etc/sysconfig/selinux
+              echo -e "Enabling Password Authentication in ssh \n"
+              /bin/sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+              echo -e "Enabling compression with logrorate \n"
+              /bin/sed -i 's/#compress/compress/g' /etc/logrotate.conf
+              echo -e "Enabling Wheel group for sudo \n"
+              /bin/sed -i 's/# \%wheel/\%wheel/g' /etc/sudoers
+              echo -e "Setting MOTD \n"
+              /bin/sed -i 's/#Banner none/Banner \/etc\/motd/g' /etc/ssh/sshd_config
+
+              cat << GO_SYSIN_DD > /etc/motd
+
+              * * * * * * * * * * * * * * * * * W A R N I N G * * * * * * * * * * * * * * *
+
+              This strictly monitored computer system is the property of Moody's
+              Use of this system is granted to authorized persons only. Disconnect NOW
+              if you have not been expressly authorized. Unauthorized use is a criminal
+              offense.  You have no right of privacy, and all information and activity
+              on this system may be monitored and recorded. Unauthorized access, malicious
+              use or modification of this system may result in local, state, or federal
+              penalties and your activity may be provided to law enforcement. Your use of
+              this system constitutes explicit consent to the foregoing.
+
+              #     #
+              ##   ##   ####    ####   #####    #   #   ####
+              # # # #  #    #  #    #  #    #    # #   #
+              #  #  #  #    #  #    #  #    #     #     ####
+              #     #  #    #  #    #  #    #     #         #
+              #     #  #    #  #    #  #    #     #    #    #
+              #     #   ####    ####   #####      #     ####
+
+              * * * * * * * * * * * * * * * * * W A R N I N G * * * * * * * * * * * * * * *
+
+              GO_SYSIN_DD
+
+              echo -e "Disabling and removing unwanted Services \n"
+              /sbin/chkconfig --del cups
+              /sbin/chkconfig --del messagebus
+              /sbin/chkconfig --del smartd
+              /sbin/chkconfig --del cpuspeed
+              /sbin/chkconfig --del ip6tables
+              yum erase -y ypbind
+      - name: PasswordPolicySetup
+        action: ExecuteBash
+        inputs:
+          commands:
+            - |
+              echo -e "Setting Password Management and creating password history database \n"
+              chmod 644 /usr/share/authconfig/authconfig.py
+              touch /etc/security/opasswd
+              chmod 600 /etc/security/opasswd
+              chown root:root /etc/security/opasswd
+
+              cp /etc/login.defs /etc/login.defs.orig
+
+              # PASS_MAX_DAYS
+              if ( expand -t1 /etc/login.defs | \
+                  egrep '^[ ]*PASS_MAX_DAYS[ ]+' > /dev/null 2>&1 ); then
+                  sed --in-place 's/^[ \t]*PASS_MAX_DAYS[ \t][0-9]*$/PASS_MAX_DAYS\t90/' /etc/login.defs
+              else
+                  echo -e 'PASS_MAX_DAYS\t90' >> /etc/login.defs
+              fi
+
+              # PASS_MIN_DAYS
+              if ( expand -t1 /etc/login.defs | \
+                  egrep '^[ ]*PASS_MIN_DAYS[ ]+' > /dev/null 2>&1 ); then
+                  sed --in-place 's/^[ \t]*PASS_MIN_DAYS[ \t][0-9]*$/PASS_MIN_DAYS\t3/' /etc/login.defs
+              else
+                  echo -e 'PASS_MIN_DAYS\t3' >> /etc/login.defs
+              fi
+
+              # PASS_MIN_LEN
+              if ( expand -t1 /etc/login.defs | \
+                  egrep '^[ ]*PASS_MIN_LEN[ ]+' > /dev/null 2>&1 ); then
+                  sed --in-place 's/^[ \t]*PASS_MIN_LEN[ \t][0-9]*$/PASS_MIN_LEN\t8/' /etc/login.defs
+              else
+                  echo -e 'PASS_MIN_LEN\t8' >> /etc/login.defs
+              fi
+
+              # PASS_WARN_AGE
+              if ( expand -t1 /etc/login.defs | \
+                  egrep '^[ ]*PASS_WARN_AGE[ ]+' > /dev/null 2>&1 ); then
+                  sed --in-place 's/^[ \t]*PASS_WARN_AGE[ \t][0-9]*$/PASS_WARN_AGE\t7/' /etc/login.defs
+              else
+                  echo -e 'PASS_WARN_AGE\t10' >> /etc/login.defs
+              fi
+
+              echo -e "Completed Password Management and creating password history database \n"
+
+              echo -e " Set higher UID/GID range for useradd/groupadd"
+              /bin/sed -i 's/UID_MIN[ \t]*500/UID_MIN \t\t5000/g' /etc/login.defs
+              /bin/sed -i 's/GID_MIN[ \t]*500/GID_MIN \t\t5000/g' /etc/login.defs
+      - name: OtherSecConfig
+        action: ExecuteBash
+        inputs:
+          commands:
+            - |
+              echo -e "SUID/SGUID Hardening \n"
+              chmod -s /bin/ping6
+              chmod -s /usr/bin/chsh
+              chmod -s /usr/bin/chage
+              chmod -s /usr/bin/wall
+              chmod -s /usr/bin/ssh-agent
+              chmod -s /usr/bin/locate
+              chmod -s /usr/bin/newgrp
+              chmod -s /usr/bin/chfn
+              chmod -s /usr/bin/write
+              chmod -s /usr/libexec/openssh/ssh-keysign
+              chmod -s /usr/libexec/utempter/utempter
+              chmod -s /usr/libexec/pt_chown
+              chmod -s /usr/sbin/userhelper
+              chmod -s /usr/sbin/usernetctl
+              chmod -s /sbin/mount.nfs
+              chmod -s /sbin/netreport
+
+              echo -e "Removing OS version from issue file \n"
+              /bin/sed -i '/Banner/d' /etc/ssh/sshd_config
+              /bin/sed -i '/Kernel/d' /etc/issue
+              /bin/sed -i '/Kernel/d' /etc/issue.net
+
+              echo -e "Setting default account expiry time \n"
+              /usr/sbin/useradd -D -f 365
+
+              /bin/echo "TMOUT=36840" >> /etc/profile.d/tmout.sh
+              /bin/echo "readonly TMOUT" >> /etc/profile.d/tmout.sh
+              /bin/echo "export TMOUT" >> /etc/profile.d/tmout.sh
+              /bin/chown root:root /etc/profile.d/tmout.sh
+              /bin/chmod 555 /etc/profile.d/tmout.sh
+      - name: SshSyslogHardeningConfig
+        action: ExecuteBash
+        inputs:
+          commands:
+            - |
+              echo -e "Starting ssh Hardening \n"
+              /bin/sed -i '/LogLevel/d' /etc/ssh/sshd_config
+              /bin/sed -i '/MaxAuthTries/d' /etc/ssh/sshd_config
+              /bin/sed -i '/IgnoreRhosts/d' /etc/ssh/sshd_config
+              /bin/sed -i '/HostbasedAuthentication/d' /etc/ssh/sshd_config
+              /bin/sed -i '/PermitEmptyPasswords/d' /etc/ssh/sshd_config
+              /bin/sed -i '/PermitUserEnvironment/d' /etc/ssh/sshd_config
+              /bin/sed -i '/ClientAliveInterval/d' /etc/ssh/sshd_config
+              /bin/sed -i '/ClientAliveCountMax/d' /etc/ssh/sshd_config
+              /bin/sed -i '/UsePrivilegeSeparation/d' /etc/ssh/sshd_config
+              /bin/sed -i '/AllowTcpForwarding/d' /etc/ssh/sshd_config
+              /bin/sed -i '/StrictModes/d' /etc/ssh/sshd_config
+              /bin/sed -i '/RhostsRSAAuthentication/d' /etc/ssh/sshd_config
+              /bin/sed -i '/RhostsAuthentication/d' /etc/ssh/sshd_config
+              /bin/sed -i '/MaxStartups/d' /etc/ssh/sshd_config
+              /bin/sed -i '/GATEWAY/d' /etc/sysconfig/network
+              /bin/echo "# Added due to Hardening Document" >> /etc/ssh/sshd_config
+              /bin/echo "LogLevel VERBOSE" >> /etc/ssh/sshd_config
+              /bin/echo "MaxAuthTries 6" >> /etc/ssh/sshd_config
+              /bin/echo "IgnoreRhosts yes" >> /etc/ssh/sshd_config
+              /bin/echo "HostbasedAuthentication no" >> /etc/ssh/sshd_config
+              /bin/echo "PermitEmptyPasswords no" >> /etc/ssh/sshd_config
+              /bin/echo "PermitUserEnvironment no" >> /etc/ssh/sshd_config
+              /bin/echo "ClientAliveInterval 600" >> /etc/ssh/sshd_config
+              /bin/echo "ClientAliveCountMax 3" >> /etc/ssh/sshd_config
+              /bin/echo "UsePrivilegeSeparation yes" >> /etc/ssh/sshd_config
+              /bin/echo "AllowTcpForwarding no" >> /etc/ssh/sshd_config
+              /bin/echo "RhostsRSAAuthentication no" >> /etc/ssh/sshd_config
+              /bin/echo "StrictModes yes" >> /etc/ssh/sshd_config
+              /bin/echo "MaxStartups 10" >> /etc/ssh/sshd_config
+              # End SSH config Hardening
+              # Start Syslog Hardening
+              /bin/echo "# Added due to Hardening Document" >> /etc/audit/audit.rules
+              /bin/echo "-w /var/log/faillog -p wa -k logins" >> /etc/audit/audit.rules
+              /bin/echo "-w /var/log/lastlog -p wa -k logins" >> /etc/audit/audit.rules
+              /bin/echo "-w /var/log/tallylog -p wa -k logins" >> /etc/audit/audit.rules
+              /bin/echo "-w /var/log/btmp -p wa -k session" >> /etc/audit/audit.rules
+              /bin/echo "-w /var/log/utmp -p wa -k session" >> /etc/audit/audit.rules
+              /bin/echo "-w /var/log/wtmp -p wa -k session" >> /etc/audit/audit.rules
+              /bin/echo "-w /var/log/sudo.log -p wa -k actions" >> /etc/audit/audit.rules
+
