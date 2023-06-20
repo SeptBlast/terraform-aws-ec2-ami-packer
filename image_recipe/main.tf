@@ -12,9 +12,10 @@ resource "aws_imagebuilder_image_recipe" "this" {
   }
 
   dynamic "systems_manager_agent" {
-    for_each = var.plaform == "Linux" ? [1] : []
-    systems_manager_agent {
-      uninstall_after_build = var.system_manager_agent_uninstall
+    for_each = var.platform == "Linux" ? { "default" = true } : {}
+    content {
+      name                  = "systems_manager_agent"
+      uninstall_after_build = var.uninstall_after_build
     }
   }
 
@@ -26,12 +27,12 @@ resource "aws_imagebuilder_image_recipe" "this" {
   }
 
 
-  /*  component {
+  /*component {
         component_arn = var.component_arns[0]
   }*/
   /*dynamic component {
     for_each = toset(var.component_arns)
-    content { 
+    content {
       component_arn = each.value
     }
   }
@@ -43,4 +44,3 @@ resource "aws_imagebuilder_image_recipe" "this" {
   working_directory = var.working_directory
   tags              = var.tags
 }
-
